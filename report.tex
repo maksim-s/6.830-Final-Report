@@ -1,4 +1,4 @@
-\documentclass[11pt]{article}
+\documentclass[11 pt ]{article}
 \usepackage[utf8]{inputenc}
 \usepackage{caption}
 \usepackage{subcaption}
@@ -11,7 +11,7 @@
 \usepackage{graphicx}
 \fi
 
-\usepackage[margin=1.15in]{geometry}
+\usepackage[margin=1.15 in]{geometry}
 
 
 \title{6.830 Final Project Report \\ Hive Join Optimization}
@@ -39,16 +39,15 @@ In this section we will discuss the way join operations work in Hive and describ
 \subsection{Common Join Task}
 \begin{figure}
 	      \centering
-                \includegraphics[scale=0.75]{common.jpg}
+                \includegraphics[scale=0.6]{common.jpg}
               \caption{Common Join Task \cite{facebook-join}}
               \label{fig:common-join}
 \end{figure}
 
-A common join task compiles into a regular map-reduce job with both map and reduce stages, as shown in Figure~\ref{fig:common-join}. In the map 
+A common join task compiles into a regular map-reduce job with both map and reduce stages, as shown in Figure~\ref{fig:common-join}. In the mapping stage the mappers read the tables and emit <key, value> pairs, indexed on the join attribute, into intermediate files. The shuffler then reads all the emitted pairs and sorts them by the key. The reducers read the sorted data and do the actual join work. The bottleneck of this approach is the shuffling stage, since all the data needs to be sorted and merged, before the reducers can start the join operation.
 
 \subsection{Map Join Task}
-Talk about Map join task here
-
+A Map Join Task is motivated by the fact that the shuffling stage in the Common Join Task takes a lot of time, and sometimes it is completely unnecessary, especially in the case when the tables are small. As shown in Figure~\ref{fig:map-join}, the Map Join Task is completed by the mappers and thus doesn't need the shuffle and reduce stages. When at least one of the tables is small enough to fit into memory, mappers can just read it in and do the work locally, in memory. The small table is processed by the Map-Reduce Local Task and the resulting hash table, index by the key, is the pushed in to the Distributed Cache. All the mappers then have access to the hash table and can execute the Map Join by reading the small table data from the Distributed Cache and the large table data from HDFS. All the joining happens inside the mappers in this approach, thus eliminating the expensive shuffle stage, when unnecessary. 
 \begin{figure}
 	      \centering
                 \includegraphics[scale=1]{mapjoin.jpg}
@@ -56,17 +55,77 @@ Talk about Map join task here
               \label{fig:map-join}
 \end{figure}
 
+\subsection{Conditional Task}
+Given the two different join strategies, described above, the system has to be able to decide when to use one over the other. Clearly Map Join cannot be used with large tables, because the hash table will not fit in memory, so there will be even more overhead from storing part of it to HDFS and then retrieving it back; on the other hand, the Common Join is not very efficient when at least one of the tables is small enough to fit in memory and introduces a lot of unnecessary overhead. The purpose of the Conditional Task is to decide, given the available at runtime table information, whether to use Common Join or Map Join. Figure~\ref{fig:conditional} shows the high-level view of how all the components are used together in Hive. The current Hive implementation uses a very simple condition to make the decision in the Conditional Task: if one of the tables is $\leq 25$ MB, then the Map Join is used, otherwise the Common Join task is fired up. 25 MB is a very conservative factor and will not always result in the most optimal decision. For example, the table, although of small size, might have a very large number of tuples, in which case the hash tables will grow too large to fit in memory and thus the performance will actually be worse than with Common Join. In the next paragraphs we will describe two different decision frameworks for the Conditional Task that we implemented and will also talk about their effect on the performance of the join operation.
+\begin{figure}
+	      \centering
+                \includegraphics[scale=1]{condition.jpg}
+              \caption{ Task \cite{facebook-join}}
+              \label{fig:conditional}
+\end{figure}
 \section{Cost Model Estimation}
+In this section we will describe the first optimization of the decision framework that takes into account the state of the entire join architecture when deciding which join task to use. Instead of just using the hardcoded 25 MB estimate, we decided to make an estimation of this number in a more programmatic way by calculating it from the cost model that we developed for the join processing architecture. We developed two cost models for both of the join tasks available and attempted to make the estimation using them. While developing these models we had to make a number of assumptions, listed below:
 
+\begin{itemize}
+\item Assumption 1 KAINAR
+\item Assumption 2
+\item Assumption 3
+\end{itemize}
+\subsection{Common Join Cost Model}
+The common join cost model gives an approximate time that Common Join will take if it is run for the given join operation. 
+EXPLAIN THE REST HERE KAINAR
+
+\subsection{Map Join Cost Model}
+The map join cost model approximates the time that would be required if Map Join were to be used for the current join task.  When using Map Join the size of the hash table produced by the Local Map Join task is one of the most important values for the cost model. Because of the way hash tables are implemented in Java, it is hard to precisely calculate the size of the hash table given the small table, so we decided to run a number of experiments and empirically identify the relationship between the contents of the small table and the size of the resulting hash table.
+EXPLAIN THE REST HERE KAINAR
+\subsection{Performance}
+We ran a number of join-heavy queries and obtained the results presented in Table~\ref{tab:cost-table}. As we can see from the results of our performance tests bla bla bla KAINAR
+\begin{table}
+\centering
+\begin{tabular}{ | l | c | r |}
+  \hline                        
+  Something & Something & Something \\
+  \hline
+  1 & 2 & 3 \\
+    \hline	
+  4 & 5 & 6 \\
+    \hline
+  7 & 8 & 9 \\
+  \hline  
+\end{tabular}
+\caption{Cost Model Performance Evaluation}
+\label{tab:cost-table}
+\end{table}
 \section{Hive Hash Table Growth Estimation}
+In this section we are going to describe the second approach that we tried in order to optimize the way the Conditional Task makes decisions. Since the limitation of the Map Join is the fact that it can only handle the tables that will produce a hash table small enough to fit in memory, we decided to try a different approach. Rather than using the cost model, which takes into account all the components of the process, we decided to just focus on the growth of the hash table based on the contents of the small table. Because of large overheads that Java introduces with the objects, it is hard to calculate the size of the hash table precisely. We used the relationship we found earlier in the first approach to estimate the size of the hash table given the contents of the small table. In this approach we make a decision by calculating a threshold on the number of rows the small table can have, by estimating the size of the hash table these rows will produce.
 
+\subsection{Growth Estimation}
+talk here about how we do the estimation of the tables KAINAR
+\subsection{Performance}
+To see the effect of our modifications we ran a number of join-heavy queries on the data that was generated by TPC-H framework. The results are presented in Table~\ref{tab:hashtable-table}. As we can see from the results bla bla bla KAINAR
+\begin{table}
+\centering
+\begin{tabular}{ | l | c | c | r |}
+  \hline                        
+  Something & Something & Something & something \\
+  \hline
+  1 & 2 & 3 & 4\\
+    \hline	
+  4 & 5 & 6 & 5\\
+    \hline
+  7 & 8 & 9 & 6\\
+  \hline  
+\end{tabular}
+\caption{Cost Model Performance Evaluation}
+\label{tab:hashtable-table}
+\end{table}
 \section{TPC-H Benchmark Results}
-
-\section{Discussion}
-\section{Conclusion}
+In this section we will show the results of running TPC-H benchmark on the original implementation of Hive. 
+bla bla bla KAINAR
+\section{Discussion and Conclusion}
+KAINAR if you want to, otherwise I can write this after you are done with the other sections, so I have some results to write about :P
 
 \bibliographystyle{plain}
-% Stuff will show up here if you use BibTeX
 \begin{thebibliography}{77}
 \bibitem{tpc-h}
 \url{http://www.tpc.org/tpch/}
